@@ -211,6 +211,52 @@
                 font-family: var(--font-mono);
             }
 
+            /* Week Selector */
+            .week-nav {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 16px;
+            }
+
+            .week-btn {
+                background: var(--color-paper-2);
+                border: 1px solid var(--color-rule);
+                border-radius: var(--radius-md);
+                padding: 10px 8px;
+                color: var(--color-neutral);
+                cursor: pointer;
+                text-align: center;
+                transition: var(--transition-fast);
+                font-family: var(--font-body);
+            }
+
+            .week-btn:hover {
+                border-color: var(--color-neutral);
+                background: var(--color-paper-3);
+                color: var(--color-ink);
+            }
+
+            .week-btn.active {
+                background: var(--color-ink);
+                border-color: var(--color-ink);
+                color: var(--color-paper);
+            }
+
+            .week-btn .week-name {
+                font-weight: 700;
+                font-size: 13px;
+                display: block;
+            }
+
+            .week-btn .week-range {
+                font-size: 11px;
+                opacity: 0.8;
+                display: block;
+                font-family: var(--font-mono);
+                margin-top: 2px;
+            }
+
             /* Horizontal Day Timeline */
             .day-timeline-container {
                 position: relative;
@@ -352,6 +398,39 @@
                 background: var(--color-accent-bg);
                 color: var(--color-accent);
                 border-color: var(--color-accent-border);
+            }
+
+            /* Weather Pill */
+            .card-header-right {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 8px;
+            }
+
+            .weather-pill {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--color-neutral);
+                background: var(--color-paper-3);
+                border: 1px solid var(--color-rule);
+                border-radius: 20px;
+                padding: 4px 10px;
+                white-space: nowrap;
+            }
+
+            .weather-pill .weather-icon {
+                font-size: 14px;
+                line-height: 1;
+            }
+
+            .weather-pill.weather-loading,
+            .weather-pill.weather-unavailable {
+                font-style: italic;
+                opacity: 0.75;
             }
 
             /* Accommodation Info Box (Verblijf) */
@@ -926,6 +1005,11 @@
 
             <!-- Base Hub Selection -->
             <div class="base-nav" id="baseNav">
+                <!-- Javascript will render this -->
+            </div>
+
+            <!-- Week Selector -->
+            <div class="week-nav" id="weekNav">
                 <!-- Javascript will render this -->
             </div>
 
@@ -1807,9 +1891,178 @@
                 }
             ];
 
+            // Trip calendar helpers
+            const TRIP_START = new Date(2026, 6, 10); // Vrijdag 10 juli 2026
+            const TOTAL_DAYS = itinerary.length;
+            const WEEKDAY_ABBR = ["Zo", "Ma", "Di", "Wo", "Do", "Vr", "Za"];
+
+            function dateForDay(dayNum) {
+                return new Date(TRIP_START.getFullYear(), TRIP_START.getMonth(), TRIP_START.getDate() + (dayNum - 1));
+            }
+
+            function isoDateForDay(dayNum) {
+                const d = dateForDay(dayNum);
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, "0");
+                const day = String(d.getDate()).padStart(2, "0");
+                return `${y}-${m}-${day}`;
+            }
+
+            function dayNumForDate(date) {
+                const start = new Date(TRIP_START.getFullYear(), TRIP_START.getMonth(), TRIP_START.getDate());
+                const cur = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                return Math.round((cur - start) / 86400000) + 1;
+            }
+
+            // Weeks: split the trip roughly in half so the day-timeline stays short
+            const weeks = [
+                { id: 1, label: "Week 1", days: itinerary.filter(d => d.day <= 7).map(d => d.day) },
+                { id: 2, label: "Week 2", days: itinerary.filter(d => d.day > 7).map(d => d.day) }
+            ];
+            weeks.forEach(w => {
+                const first = itinerary.find(d => d.day === w.days[0]);
+                const last = itinerary.find(d => d.day === w.days[w.days.length - 1]);
+                const lastParts = last.date.split(" ");
+                w.range = `${first.date.split(" ")[1]} – ${lastParts[1]} ${lastParts[2]}`;
+            });
+
+            function weekForDay(dayNum) {
+                const w = weeks.find(w => w.days.includes(dayNum));
+                return w ? w.id : weeks[0].id;
+            }
+
+            // Weather (Open-Meteo, no API key required)
+            const WEATHER_LOCATIONS = {
+                inverness: { lat: 57.4778, lon: -4.2247 },
+                skye: { lat: 57.293, lon: -6.1837 },
+                fortWilliam: { lat: 56.8198, lon: -5.1052 },
+                glasgow: { lat: 55.8642, lon: -4.2518 },
+                edinburgh: { lat: 55.9533, lon: -3.1883 }
+            };
+
+            const WEATHER_CODES = {
+                0: { icon: "☀️", label: "Zonnig" },
+                1: { icon: "🌤️", label: "Overwegend zonnig" },
+                2: { icon: "⛅", label: "Half bewolkt" },
+                3: { icon: "☁️", label: "Bewolkt" },
+                45: { icon: "🌫️", label: "Mist" },
+                48: { icon: "🌫️", label: "Mist" },
+                51: { icon: "🌦️", label: "Motregen" },
+                53: { icon: "🌦️", label: "Motregen" },
+                55: { icon: "🌦️", label: "Motregen" },
+                56: { icon: "🌧️", label: "IJzel" },
+                57: { icon: "🌧️", label: "IJzel" },
+                61: { icon: "🌧️", label: "Regen" },
+                63: { icon: "🌧️", label: "Regen" },
+                65: { icon: "🌧️", label: "Zware regen" },
+                66: { icon: "🌧️", label: "IJzel" },
+                67: { icon: "🌧️", label: "IJzel" },
+                71: { icon: "🌨️", label: "Sneeuw" },
+                73: { icon: "🌨️", label: "Sneeuw" },
+                75: { icon: "🌨️", label: "Zware sneeuw" },
+                77: { icon: "🌨️", label: "Sneeuwkorrels" },
+                80: { icon: "🌦️", label: "Buien" },
+                81: { icon: "🌦️", label: "Buien" },
+                82: { icon: "🌦️", label: "Zware buien" },
+                85: { icon: "🌨️", label: "Sneeuwbuien" },
+                86: { icon: "🌨️", label: "Sneeuwbuien" },
+                95: { icon: "⛈️", label: "Onweer" },
+                96: { icon: "⛈️", label: "Onweer met hagel" },
+                99: { icon: "⛈️", label: "Onweer met hagel" }
+            };
+
+            const weatherCache = {}; // baseId -> Promise<{ [isoDate]: {code, tmax, tmin} }>
+
+            function loadWeatherForBase(baseId) {
+                if (weatherCache[baseId]) return weatherCache[baseId];
+                const loc = WEATHER_LOCATIONS[baseId];
+                if (!loc) return Promise.resolve({});
+
+                // Open-Meteo's forecast horizon is ~16 days out; clamp the request so one
+                // out-of-range day (e.g. the last day of the trip) doesn't 400 the whole call.
+                const today = new Date();
+                const maxForecastDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 15);
+                const tripStart = dateForDay(1);
+                const tripEnd = dateForDay(TOTAL_DAYS);
+                const rangeEnd = tripEnd < maxForecastDate ? tripEnd : maxForecastDate;
+
+                if (rangeEnd < tripStart) return Promise.resolve({});
+
+                const toIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                const start = toIso(tripStart);
+                const end = toIso(rangeEnd);
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=Europe%2FLondon&start_date=${start}&end_date=${end}`;
+
+                weatherCache[baseId] = fetch(url)
+                    .then(res => res.ok ? res.json() : Promise.reject(new Error("weather fetch failed")))
+                    .then(data => {
+                        const map = {};
+                        if (data && data.daily && data.daily.time) {
+                            data.daily.time.forEach((date, i) => {
+                                map[date] = {
+                                    code: data.daily.weathercode[i],
+                                    tmax: data.daily.temperature_2m_max[i],
+                                    tmin: data.daily.temperature_2m_min[i]
+                                };
+                            });
+                        }
+                        return map;
+                    })
+                    .catch(() => ({}));
+
+                return weatherCache[baseId];
+            }
+
+            let weatherRequestToken = 0;
+
+            function renderWeather(dayNum, baseId) {
+                const box = document.getElementById("weatherBox");
+                if (!box) return;
+                const token = ++weatherRequestToken;
+                box.className = "weather-pill weather-loading";
+                box.innerHTML = `<span>Weer laden…</span>`;
+
+                loadWeatherForBase(baseId).then(map => {
+                    if (token !== weatherRequestToken) return; // stale, user navigated away
+                    const boxNow = document.getElementById("weatherBox");
+                    if (!boxNow) return;
+
+                    const entry = map[isoDateForDay(dayNum)];
+                    if (!entry || entry.tmax == null || entry.tmin == null) {
+                        boxNow.className = "weather-pill weather-unavailable";
+                        boxNow.innerHTML = `<span>Voorspelling nog niet beschikbaar</span>`;
+                        return;
+                    }
+
+                    const info = WEATHER_CODES[entry.code] || { icon: "❓", label: "Onbekend" };
+                    boxNow.className = "weather-pill";
+                    boxNow.innerHTML = `
+                        <span class="weather-icon">${info.icon}</span>
+                        <span>${Math.round(entry.tmin)}° – ${Math.round(entry.tmax)}°C · ${info.label}</span>
+                    `;
+                });
+            }
+
             // State management
+            const SAVED_DAY_KEY = "schotland_activeDay";
             let activeBaseId = "inverness";
             let activeDayNum = 1;
+
+            // Prefer today's date if the trip is underway; otherwise restore the last viewed day
+            const todayDayNum = dayNumForDate(new Date());
+            if (todayDayNum >= 1 && todayDayNum <= TOTAL_DAYS) {
+                activeDayNum = todayDayNum;
+            } else {
+                const savedDay = parseInt(localStorage.getItem(SAVED_DAY_KEY), 10);
+                if (savedDay >= 1 && savedDay <= TOTAL_DAYS) {
+                    activeDayNum = savedDay;
+                }
+            }
+            {
+                const startDay = itinerary.find(d => d.day === activeDayNum);
+                if (startDay) activeBaseId = startDay.baseId;
+            }
+            let activeWeek = weekForDay(activeDayNum);
             const expandedActivities = new Set(); 
 
             // Render Base Buttons
@@ -1826,28 +2079,47 @@
                 }).join('');
             }
 
-            // Render Day Circle Timeline
+            // Render Week Toggle
+            function renderWeekNav() {
+                const nav = document.getElementById("weekNav");
+                nav.innerHTML = weeks.map(w => {
+                    const isActive = w.id === activeWeek;
+                    return `
+                        <button class="week-btn ${isActive ? 'active' : ''}" onclick="selectWeek(${w.id})">
+                            <span class="week-name">${w.label}</span>
+                            <span class="week-range">${w.range}</span>
+                        </button>
+                    `;
+                }).join('');
+            }
+
+            // Render Day Circle Timeline (only the active week's days)
             function renderTimeline() {
                 const timeline = document.getElementById("dayTimeline");
-                timeline.innerHTML = itinerary.map(day => {
+                const week = weeks.find(w => w.id === activeWeek) || weeks[0];
+                const daysInWeek = itinerary.filter(day => week.days.includes(day.day));
+
+                timeline.innerHTML = daysInWeek.map(day => {
                     const isActive = day.day === activeDayNum;
-                    
+
                     // Determine status dot color based on tempo
                     let dotColor = "var(--color-green)";
                     if (day.tempo === "gemiddeld") dotColor = "var(--color-gold)";
                     if (day.tempo === "actief") dotColor = "var(--color-accent)";
 
+                    const date = dateForDay(day.day);
+
                     return `
-                        <button class="day-btn ${isActive ? 'active' : ''}" 
+                        <button class="day-btn ${isActive ? 'active' : ''}"
                                 id="day-btn-${day.day}"
                                 onclick="selectDay(${day.day})">
-                            <span class="day-label">Dag</span>
-                            <span class="day-num">${day.day}</span>
+                            <span class="day-label">${WEEKDAY_ABBR[date.getDay()]}</span>
+                            <span class="day-num">${date.getDate()}</span>
                             <span class="day-status" style="background: ${isActive ? 'var(--color-paper)' : dotColor}"></span>
                         </button>
                     `;
                 }).join('');
-                
+
                 // Auto scroll timeline to keep active day centered
                 const activeBtn = document.getElementById(`day-btn-${activeDayNum}`);
                 if (activeBtn) {
@@ -2039,11 +2311,14 @@
                         <div>
                             <div class="day-meta">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                                Dag ${dayData.day} · ${dayData.date}
+                                ${dayData.date}
                             </div>
                             <h2 class="day-title">${dayData.title}</h2>
                         </div>
-                        <span class="tempo-tag tempo-${dayData.tempo}">${tempoLabel}</span>
+                        <div class="card-header-right">
+                            <span class="weather-pill weather-loading" id="weatherBox"><span>Weer laden…</span></span>
+                            <span class="tempo-tag tempo-${dayData.tempo}">${tempoLabel}</span>
+                        </div>
                     </div>
 
                     ${accomSection}
@@ -2070,11 +2345,13 @@
                         <button class="nav-btn" ${dayData.day === 1 ? 'disabled' : ''} onclick="prevDay()">
                             ← Vorige
                         </button>
-                        <button class="nav-btn" ${dayData.day === 15 ? 'disabled' : ''} onclick="nextDay()">
+                        <button class="nav-btn" ${dayData.day === TOTAL_DAYS ? 'disabled' : ''} onclick="nextDay()">
                             Volgende →
                         </button>
                     </div>
                 `;
+
+                renderWeather(dayData.day, dayData.baseId);
             }
 
             // Navigation Handlers
@@ -2083,24 +2360,47 @@
                 const firstDay = itinerary.find(d => d.baseId === baseId);
                 if (firstDay) {
                     activeDayNum = firstDay.day;
+                    activeWeek = weekForDay(activeDayNum);
+                }
+                localStorage.setItem(SAVED_DAY_KEY, String(activeDayNum));
+                renderBases();
+                renderWeekNav();
+                renderTimeline();
+                renderDayCard();
+            }
+
+            // Select specific week
+            function selectWeek(weekId) {
+                const week = weeks.find(w => w.id === weekId);
+                if (!week) return;
+                activeWeek = weekId;
+                if (!week.days.includes(activeDayNum)) {
+                    activeDayNum = week.days[0];
+                    const dayData = itinerary.find(d => d.day === activeDayNum);
+                    if (dayData) activeBaseId = dayData.baseId;
+                    localStorage.setItem(SAVED_DAY_KEY, String(activeDayNum));
                 }
                 renderBases();
+                renderWeekNav();
                 renderTimeline();
                 renderDayCard();
             }
 
             // Select specific day
             function selectDay(dayNum) {
-                if (dayNum < 1 || dayNum > 15) return;
+                if (dayNum < 1 || dayNum > TOTAL_DAYS) return;
                 activeDayNum = dayNum;
                 const dayData = itinerary.find(d => d.day === dayNum);
                 if (dayData) {
                     activeBaseId = dayData.baseId;
                 }
+                activeWeek = weekForDay(activeDayNum);
+                localStorage.setItem(SAVED_DAY_KEY, String(activeDayNum));
                 renderBases();
+                renderWeekNav();
                 renderTimeline();
                 renderDayCard();
-                
+
                 if (window.innerWidth < 768) {
                     document.getElementById("itineraryCard").scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
@@ -2117,6 +2417,7 @@
 
             // Initial Render
             renderBases();
+            renderWeekNav();
             renderTimeline();
             renderDayCard();
         </script>
