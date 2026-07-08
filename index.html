@@ -433,6 +433,11 @@
                 opacity: 0.75;
             }
 
+            .weather-pill.weather-current em {
+                font-style: italic;
+                opacity: 0.7;
+            }
+
             /* Accommodation Info Box (Verblijf) */
             .accommodation-box {
                 background: var(--color-paper-3);
@@ -1991,7 +1996,7 @@
                 const toIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
                 const start = toIso(tripStart);
                 const end = toIso(rangeEnd);
-                const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=Europe%2FLondon&start_date=${start}&end_date=${end}`;
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weathercode,temperature_2m_max,temperature_2m_min&current_weather=true&timezone=Europe%2FLondon&start_date=${start}&end_date=${end}`;
 
                 weatherCache[baseId] = fetch(url)
                     .then(res => res.ok ? res.json() : Promise.reject(new Error("weather fetch failed")))
@@ -2006,9 +2011,13 @@
                                 };
                             });
                         }
-                        return map;
+                        const current = (data && data.current_weather) ? {
+                            code: data.current_weather.weathercode,
+                            temp: data.current_weather.temperature
+                        } : null;
+                        return { daily: map, current };
                     })
-                    .catch(() => ({}));
+                    .catch(() => ({ daily: {}, current: null }));
 
                 return weatherCache[baseId];
             }
@@ -2022,24 +2031,35 @@
                 box.className = "weather-pill weather-loading";
                 box.innerHTML = `<span>Weer laden…</span>`;
 
-                loadWeatherForBase(baseId).then(map => {
+                loadWeatherForBase(baseId).then(({ daily, current }) => {
                     if (token !== weatherRequestToken) return; // stale, user navigated away
                     const boxNow = document.getElementById("weatherBox");
                     if (!boxNow) return;
 
-                    const entry = map[isoDateForDay(dayNum)];
-                    if (!entry || entry.tmax == null || entry.tmin == null) {
-                        boxNow.className = "weather-pill weather-unavailable";
-                        boxNow.innerHTML = `<span>Voorspelling nog niet beschikbaar</span>`;
+                    const entry = daily[isoDateForDay(dayNum)];
+                    if (entry && entry.tmax != null && entry.tmin != null) {
+                        const info = WEATHER_CODES[entry.code] || { icon: "❓", label: "Onbekend" };
+                        boxNow.className = "weather-pill";
+                        boxNow.innerHTML = `
+                            <span class="weather-icon">${info.icon}</span>
+                            <span>${Math.round(entry.tmin)}° – ${Math.round(entry.tmax)}°C · ${info.label}</span>
+                        `;
                         return;
                     }
 
-                    const info = WEATHER_CODES[entry.code] || { icon: "❓", label: "Onbekend" };
-                    boxNow.className = "weather-pill";
-                    boxNow.innerHTML = `
-                        <span class="weather-icon">${info.icon}</span>
-                        <span>${Math.round(entry.tmin)}° – ${Math.round(entry.tmax)}°C · ${info.label}</span>
-                    `;
+                    // Forecast not out yet for this date — fall back to the current conditions
+                    if (current && current.temp != null) {
+                        const info = WEATHER_CODES[current.code] || { icon: "❓", label: "Onbekend" };
+                        boxNow.className = "weather-pill weather-current";
+                        boxNow.innerHTML = `
+                            <span class="weather-icon">${info.icon}</span>
+                            <span>Nu ${Math.round(current.temp)}°C · ${info.label} <em>(nog geen voorspelling voor deze dag)</em></span>
+                        `;
+                        return;
+                    }
+
+                    boxNow.className = "weather-pill weather-unavailable";
+                    boxNow.innerHTML = `<span>Voorspelling nog niet beschikbaar</span>`;
                 });
             }
 
